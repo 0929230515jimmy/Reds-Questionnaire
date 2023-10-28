@@ -1,0 +1,85 @@
+---
+title: "Reds Assessment"
+author: "Chin-yu"
+date: "2023-10-28"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(dbplyr)
+reds_dataset <- read.csv("data.csv",header = TRUE)
+```
+
+```{r}
+reds_dataset <- reds_dataset %>%
+    mutate(on_base = ifelse(IS_RUNNER_ON_1B == 1 | IS_RUNNER_ON_2B == 1 | IS_RUNNER_ON_3B == 1, "On-base", "Not-on base"))
+  
+pitches <- reds_dataset %>%
+  group_by(PITCHER_KEY, PITCH_TYPE_TRACKED_KEY, on_base)%>%
+  summarise(spin = mean(SPIN_RATE_ABSOLUTE), horizontal_break = mean(HORIZONTAL_BREAK), vertical_break = mean(INDUCED_VERTICAL_BREAK), sd_spin = sd(SPIN_RATE_ABSOLUTE), sd_horizontal_break = sd(HORIZONTAL_BREAK), sd_vertical_break = sd(INDUCED_VERTICAL_BREAK))
+```
+```{r}
+avg_spin <- mean(reds_dataset$SPIN_RATE_ABSOLUTE)
+reds_dataset |>
+  ggplot() +
+  geom_jitter(mapping = aes(x = SPIN_RATE_ABSOLUTE, y = "all data"), 
+              shape = 1, size = 3, width=4, height=0.3) +
+  geom_vline(mapping = aes(xintercept = avg_spin,
+                           color = "Average spin")) +
+  labs(title = "Average spin out of all the data", 
+       colour = "",
+       x = "Average spin", y = "") +
+  theme_hc()
+
+```
+```{r}
+avg_vertical <- mean(reds_dataset$INDUCED_VERTICAL_BREAK)
+reds_dataset |>
+  ggplot() +
+  geom_jitter(mapping = aes(x = INDUCED_VERTICAL_BREAK, y = "all data"), 
+              shape = 1, size = 3, width=4, height=0.3) +
+  geom_vline(mapping = aes(xintercept = avg_vertical,
+                           color = "Average vertical")) +
+  labs(title = "Average vertical movement out of all the data", 
+       colour = "",
+       x = "Average vertical movement", y = "") +
+  theme_hc()
+```
+
+```{r}
+avg_horizontal <- mean(reds_dataset$HORIZONTAL_BREAK)
+reds_dataset |>
+  ggplot() +
+  geom_jitter(mapping = aes(x = HORIZONTAL_BREAK, y = "all data"), 
+              shape = 1, size = 3, width=4, height=0.3) +
+  geom_vline(mapping = aes(xintercept = avg_horizontal,
+                           color = "Average horizontal")) +
+  labs(title = "Average horizontal movement out of all the data", 
+       colour = "",
+       x = "Average horizontal movement", y = "") +
+  theme_hc()
+```
+
+```{r}
+pitches_mutate <- left_join(reds_dataset, pitches, by = c("PITCHER_KEY", "PITCH_TYPE_TRACKED_KEY", "on_base"))%>%
+   mutate(z_score_spin = (SPIN_RATE_ABSOLUTE - spin) / sd_spin, z_score_horizontal = (HORIZONTAL_BREAK - horizontal_break) / sd_horizontal_break, z_score_vertical = (INDUCED_VERTICAL_BREAK - vertical_break) / sd_vertical_break)%>%
+   select('PID', 'PITCHER_KEY', 'THROW_SIDE_KEY', 'PITCH_TYPE_TRACKED_KEY', 'INDUCED_VERTICAL_BREAK', 'HORIZONTAL_BREAK', 'SPIN_RATE_ABSOLUTE', 'spin', 'horizontal_break', 'vertical_break', 'sd_spin', 'sd_horizontal_break', 'sd_vertical_break', 'z_score_spin', 'z_score_horizontal', 'z_score_vertical')%>%
+   mutate(p_spin = pnorm(z_score_spin), p_horizontal = pnorm(z_score_horizontal), p_vertical = pnorm(z_score_vertical))%>%
+   mutate(p_avg = abs((0.5 - p_spin) + (0.5 - p_horizontal) + (0.5 - p_vertical))/3)%>%
+   mutate(DEWPOINT_AFFECTED = case_when(
+                                     p_spin > 0.5 & p_horizontal > 0.5 ~ 0,
+                                     p_spin > 0.5 & p_vertical > 0.5 ~ 0,
+                                     p_spin < 0.5 | p_horizontal < 0.5 | p_vertical < 0.5 ~                                            p_avg))
+```
+
+
+```{r}
+final <- pitches_mutate %>%
+   select(DEWPOINT_AFFECTED)%>%
+   round(digits = 3)
+```
+
+```{r}
+write.csv(final, "submission.csv")
+```
